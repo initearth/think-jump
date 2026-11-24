@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace app;
 
 use think\App;
-use youvision\think\Jump;
+use Initearth\think\Jump;
 
 abstract class BaseController
 {

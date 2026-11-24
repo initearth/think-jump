@@ -1,5 +1,5 @@
 {
-    "name": "youvision/think-jump",
+    "name": "initearth/think-jump",
     "description": "适用于 ThinkPHP 8.0 的跳转扩展",
     "keywords": ["thinkphp", "think-jump", "success","error","result","redirect"],
     "license": "MulanPSL-2.0",
@@ -21,7 +21,7 @@
     },
     "autoload": {
         "psr-4": {
-            "youvision\\think\\": "src/"
+            "Initearth\\think\\": "src/"
         }
     },
     "extra": {

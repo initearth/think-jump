@@ -3,7 +3,7 @@
 仓库地址：**<https://github.com/initearth/ThinkPHP-PanGu/>**
 在线站点：**<https://initearth.github.io/ThinkPHP-PanGu/>**
 
-# youvision/think-jump
+# initearth/think-jump
 
 适用于 ThinkPHP 8.0 的跳转扩展。通过一个 `Jump` trait 为控制器提供 `success`、`error`、`result`、`redirect` 四个快捷响应方法，自动区分 HTML 页面跳转与 Ajax/JSON 接口返回。
 
@@ -44,7 +44,7 @@
 ## 安装
 
 ```bash
-composer require youvision/think-jump
+composer require initearth/think-jump
 ```
 
 ## 配置
@@ -56,9 +56,9 @@ composer require youvision/think-jump
 // config/jump.php
 return [
     // 操作成功跳转页面对应的模板文件
-    'dispatch_success_tmpl' => app()->getRootPath() . '/vendor/youvision/think-jump/src/tpl/dispatch_jump.tpl',
+    'dispatch_success_tmpl' => app()->getRootPath() . '/vendor/initearth/think-jump/src/tpl/dispatch_jump.tpl',
     // 操作失败跳转页面对应的模板文件
-    'dispatch_error_tmpl'   => app()->getRootPath() . '/vendor/youvision/think-jump/src/tpl/dispatch_jump.tpl',
+    'dispatch_error_tmpl'   => app()->getRootPath() . '/vendor/initearth/think-jump/src/tpl/dispatch_jump.tpl',
 ];
 ```
 
@@ -73,7 +73,7 @@ return [
 
 namespace app\controller;
 
-use youvision\think\Jump;
+use Initearth\think\Jump;
 
 class Index
 {
@@ -95,7 +95,7 @@ namespace app;
 
 abstract class BaseController
 {
-    use \youvision\think\Jump;
+    use \Initearth\think\Jump;
 
     // 其余初始化逻辑保持不变
 }
@@ -273,7 +273,7 @@ Ajax/JSON 下 `success()` 与 `error()` 返回的结构：
 
 ## 自定义跳转模板
 
-将 `vendor/youvision/think-jump/src/tpl/dispatch_jump.tpl` 复制到项目中（例如 `app/view/dispatch_jump.tpl`），然后修改配置：
+将 `vendor/initearth/think-jump/src/tpl/dispatch_jump.tpl` 复制到项目中（例如 `app/view/dispatch_jump.tpl`），然后修改配置：
 
 ```php
 return [

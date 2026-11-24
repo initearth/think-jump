@@ -6,7 +6,7 @@
  * Time: 10:43
  */
 
-namespace youvision\think;
+namespace Initearth\think;
 
 use think\exception\HttpResponseException;
 use think\Response;

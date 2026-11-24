@@ -197,10 +197,10 @@ protected function result(
 | `$header` | array | `[]` | 发送的 Header 信息 |
 
 ```php
-return $this->result(['username' => 'youvision']);
+return $this->result(['username' => 'initearth']);
 
 // 显式指定 JSON 格式
-return $this->result(['username' => 'youvision'], 0, 'ok', 'json');
+return $this->result(['username' => 'initearth'], 0, 'ok', 'json');
 ```
 
 返回结构：
@@ -211,7 +211,7 @@ return $this->result(['username' => 'youvision'], 0, 'ok', 'json');
     "msg": "",
     "time": 1700000000,
     "data": {
-        "username": "youvision"
+        "username": "initearth"
     }
 }
 ```

@@ -14,22 +14,10 @@ use think\Response;
 trait Jump
 {
     /**
-     * Request实例
-     * @var \think\Request
-     */
-    protected $request = null;
-
-    /**
-     * 应用实例
-     * @var \think\App
-     */
-    protected $app = null;
-
-    /**
      * 操作成功跳转的快捷方法
      * @access protected
      * @param mixed $msg 提示信息
-     * @param  ?string $url 跳转的URL地址
+     * @param ?string $url 跳转的URL地址
      * @param mixed $data 返回的数据
      * @param int $wait 跳转等待时间
      * @param array $header 发送的Header信息
@@ -38,9 +26,9 @@ trait Jump
     protected function success(mixed $msg = '', ?string $url = null, mixed $data = '', int $wait = 3, array $header = [])
     {
         if (is_null($url) && isset($_SERVER["HTTP_REFERER"])) {
-            $url = $_SERVER["HTTP_REFERER"];
+            $url = $this->filterUrl($_SERVER["HTTP_REFERER"]);
         } elseif ($url) {
-            $url = (strpos($url, '://') || 0 === strpos($url, '/')) ? $url : (string)($this->app ?? app())->route->buildUrl($url);
+            $url = $this->filterUrl($this->buildJumpUrl($url));
         }
 
         $result = [
@@ -53,8 +41,9 @@ trait Jump
 
         $type = $this->getResponseType();
         if ('html' == strtolower($type)) {
-            $type = 'view';
-            $response = Response::create(($this->app ?? app())->config->get('jump.dispatch_success_tmpl'), $type)->assign($result)->header($header);
+            $response = Response::create($this->getTmpl('dispatch_success_tmpl'), 'view')
+                ->assign($this->viewData($result))
+                ->header($header);
         } else {
             $response = Response::create($result, $type)->header($header);
         }
@@ -66,7 +55,7 @@ trait Jump
      * 操作错误跳转的快捷方法
      * @access protected
      * @param mixed $msg 提示信息
-     * @param  ?string $url 跳转的URL地址
+     * @param ?string $url 跳转的URL地址
      * @param mixed $data 返回的数据
      * @param int $wait 跳转等待时间
      * @param array $header 发送的Header信息
@@ -77,7 +66,7 @@ trait Jump
         if (is_null($url)) {
             $url = ($this->request ?? request())->isAjax() ? '' : 'javascript:history.back(-1);';
         } elseif ($url) {
-            $url = (strpos($url, '://') || 0 === strpos($url, '/')) ? $url : (string)($this->app ?? app())->route->buildUrl($url);
+            $url = $this->filterUrl($this->buildJumpUrl($url));
         }
 
         $result = [
@@ -89,10 +78,10 @@ trait Jump
         ];
 
         $type = $this->getResponseType();
-
         if ('html' == strtolower($type)) {
-            $type = 'view';
-            $response = Response::create(($this->app ?? app())->config->get('jump.dispatch_error_tmpl'), $type)->assign($result)->header($header);
+            $response = Response::create($this->getTmpl('dispatch_error_tmpl'), 'view')
+                ->assign($this->viewData($result))
+                ->header($header);
         } else {
             $response = Response::create($result, $type)->header($header);
         }
@@ -119,7 +108,7 @@ trait Jump
             'data' => $data,
         ];
 
-        $type = $type ?: $this->getResponseType();
+        $type = $type ?: 'json';
         $response = Response::create($result, $type)->header($header);
 
         throw new HttpResponseException($response);
@@ -151,5 +140,61 @@ trait Jump
     {
         $request = $this->request ?? request();
         return $request->isJson() || $request->isAjax() ? 'json' : 'html';
+    }
+
+    /**
+     * 解析跳转地址，绝对路径与锚点、查询串等相对地址按原样使用
+     */
+    private function buildJumpUrl(string $url): string
+    {
+        if (str_contains($url, '://') || str_starts_with($url, '/') || str_starts_with($url, '?')
+            || str_starts_with($url, '#') || str_starts_with($url, './') || str_starts_with($url, '../')) {
+            return $url;
+        }
+
+        return (string)($this->app ?? app())->route->buildUrl($url);
+    }
+
+    /**
+     * 过滤非 http/https 协议，避免 javascript: 等危险地址进入跳转链接
+     */
+    private function filterUrl(?string $url): ?string
+    {
+        if (null === $url || '' === $url) {
+            return $url;
+        }
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if (null !== $scheme && !in_array(strtolower((string)$scheme), ['http', 'https'], true)) {
+            return '';
+        }
+
+        return $url;
+    }
+
+    /**
+     * 获取跳转模板，配置缺失或路径失效时回退到扩展内置模板
+     */
+    private function getTmpl(string $key): string
+    {
+        $tpl = ($this->app ?? app())->config->get('jump.' . $key);
+
+        return is_string($tpl) && is_file($tpl) ? $tpl : __DIR__ . '/tpl/dispatch_jump.html';
+    }
+
+    /**
+     * 模板变量预处理：msg/url 统一转为字符串并完成 HTML 转义
+     */
+    private function viewData(array $result): array
+    {
+        $msg = $result['msg'];
+        if (is_array($msg) || is_object($msg)) {
+            $msg = json_encode($msg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+        }
+
+        $result['msg'] = htmlspecialchars((string)$msg, ENT_QUOTES, 'UTF-8');
+        $result['url'] = htmlspecialchars((string)($result['url'] ?? ''), ENT_QUOTES, 'UTF-8');
+
+        return $result;
     }
 }

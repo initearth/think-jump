@@ -22,17 +22,41 @@
     <h1>操作失败</h1>
     {/if}
     <p class="msg">{$msg}</p>
-    <p class="tip">页面将在 <span id="wait">{$wait}</span> 秒后自动跳转，<a id="href" href="{$url}">立即跳转</a></p>
+    <p class="tip">页面将在 <span id="wait">{$wait}</span> 秒后自动跳转，<a id="href" href="{$url}"{if $back} data-back="1"{/if}>立即跳转</a></p>
 </div>
 <script>
 (function () {
-    var wait = document.getElementById('wait');
-    var href = document.getElementById('href').href;
-    var timer = setInterval(function () {
-        var time = --wait.innerHTML;
-        if (time <= 0) {
+    var waitEl = document.getElementById('wait');
+    var link = document.getElementById('href');
+    var back = link.getAttribute('data-back') === '1';
+    var remaining = parseInt(waitEl.textContent, 10);
+    var timer;
+
+    if (isNaN(remaining) || remaining < 0) {
+        remaining = 0;
+    }
+    waitEl.textContent = remaining;
+
+    function jump() {
+        if (back) {
+            history.back();
+        } else {
+            location.href = link.href;
+        }
+    }
+
+    link.addEventListener('click', function (event) {
+        event.preventDefault();
+        clearInterval(timer);
+        jump();
+    });
+
+    timer = setInterval(function () {
+        remaining -= 1;
+        waitEl.textContent = remaining;
+        if (remaining <= 0) {
             clearInterval(timer);
-            location.href = href;
+            jump();
         }
     }, 1000);
 })();

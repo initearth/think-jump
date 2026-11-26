@@ -8,11 +8,15 @@
 
 namespace Initearth\think;
 
+use JsonException;
 use think\exception\HttpResponseException;
+use think\facade\Route;
 use think\Response;
 
 trait Jump
 {
+    private static array $tmplCache = [];
+
     /**
      * 操作成功跳转的快捷方法
      * @access protected
@@ -25,12 +29,18 @@ trait Jump
      */
     protected function success(mixed $msg = '', ?string $url = null, mixed $data = '', int $wait = 3, array $header = [])
     {
-        if (is_null($url) && isset($_SERVER["HTTP_REFERER"])) {
-            $url = $this->filterUrl($_SERVER["HTTP_REFERER"]);
+        $back = false;
+        if (is_null($url)) {
+            $referer = $this->requestReferer();
+            $url     = ('' !== $referer && $this->isAllowedReferer($referer)) ? $referer : $this->defaultJumpUrl();
         } elseif ($url) {
-            $url = $this->filterUrl($this->buildJumpUrl($url));
+            $url = $this->filterUrl($url);
+            if ('' !== $url) {
+                $url = $this->buildJumpUrl($url);
+            }
         }
 
+        $wait   = max(0, $wait);
         $result = [
             'code' => 1,
             'msg' => $msg,
@@ -41,8 +51,9 @@ trait Jump
 
         $type = $this->getResponseType();
         if ('html' == strtolower($type)) {
-            $response = Response::create($this->getTmpl('dispatch_success_tmpl'), 'view')
-                ->assign($this->viewData($result))
+            /** @var \think\response\View $view */
+            $view     = Response::create($this->getTmpl('dispatch_success_tmpl'), 'view');
+            $response = $view->assign($this->viewData($result + ['back' => $back]))
                 ->header($header);
         } else {
             $response = Response::create($result, $type)->header($header);
@@ -63,12 +74,18 @@ trait Jump
      */
     protected function error(mixed $msg = '', ?string $url = null, mixed $data = '', int $wait = 3, array $header = [])
     {
+        $back = false;
         if (is_null($url)) {
-            $url = ($this->request ?? request())->isAjax() ? '' : 'javascript:history.back(-1);';
+            $back = $this->getResponseType() === 'html';
+            $url  = '';
         } elseif ($url) {
-            $url = $this->filterUrl($this->buildJumpUrl($url));
+            $url = $this->filterUrl($url);
+            if ('' !== $url) {
+                $url = $this->buildJumpUrl($url);
+            }
         }
 
+        $wait   = max(0, $wait);
         $result = [
             'code' => 0,
             'msg' => $msg,
@@ -79,8 +96,9 @@ trait Jump
 
         $type = $this->getResponseType();
         if ('html' == strtolower($type)) {
-            $response = Response::create($this->getTmpl('dispatch_error_tmpl'), 'view')
-                ->assign($this->viewData($result))
+            /** @var \think\response\View $view */
+            $view     = Response::create($this->getTmpl('dispatch_error_tmpl'), 'view');
+            $response = $view->assign($this->viewData($result + ['back' => $back]))
                 ->header($header);
         } else {
             $response = Response::create($result, $type)->header($header);
@@ -108,7 +126,11 @@ trait Jump
             'data' => $data,
         ];
 
-        $type = $type ?: 'json';
+        $type = strtolower($type ?: 'json');
+        if (!in_array($type, ['json', 'jsonp', 'xml'], true)) {
+            $type = 'json';
+        }
+
         $response = Response::create($result, $type)->header($header);
 
         throw new HttpResponseException($response);
@@ -120,13 +142,21 @@ trait Jump
      * @param string $url 跳转的URL表达式
      * @param int $code http code
      * @param array $with 隐式传参
+     * @param bool $safe 是否按跳转地址规则过滤
      * @return void
      */
-    protected function redirect(string $url, int $code = 302, array $with = [])
+    protected function redirect(string $url, int $code = 302, array $with = [], bool $safe = true)
     {
-        $response = Response::create($url, 'redirect');
+        if ($safe) {
+            $url = $this->filterUrl($url) ?? '';
+            if ('' !== $url) {
+                $url = $this->buildJumpUrl($url);
+            }
+        }
 
-        $response->code($code)->with($with);
+        /** @var \think\response\Redirect $redirect */
+        $redirect = Response::create($url, 'redirect');
+        $response = $redirect->code($code)->with($with);
 
         throw new HttpResponseException($response);
     }
@@ -143,6 +173,77 @@ trait Jump
     }
 
     /**
+     * 读取 jump 配置
+     */
+    private function jumpConfig(string $key, mixed $default = null): mixed
+    {
+        return ($this->app ?? app())->config->get('jump.' . $key, $default);
+    }
+
+    /**
+     * 读取并过滤 HTTP_REFERER
+     */
+    private function requestReferer(): string
+    {
+        $request = $this->request ?? request();
+        $referer = $request->server('HTTP_REFERER', '');
+
+        if (!is_string($referer)) {
+            return '';
+        }
+
+        return $this->filterUrl($referer) ?? '';
+    }
+
+    /**
+     * Referer 默认只允许同源；allowed_referer_hosts 可补充白名单域名
+     */
+    private function isAllowedReferer(string $url): bool
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!is_string($host) || '' === $host) {
+            return false;
+        }
+
+        $host = strtolower($host);
+        if ($host === strtolower(($this->request ?? request())->host(true))) {
+            return true;
+        }
+
+        $allowed = $this->jumpConfig('allowed_referer_hosts', []);
+        if (!is_array($allowed)) {
+            return false;
+        }
+
+        foreach ($allowed as $item) {
+            if (is_string($item) && $host === strtolower($item)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 无可用 Referer 时的回退地址，默认 /
+     */
+    private function defaultJumpUrl(): ?string
+    {
+        $default = $this->jumpConfig('default_url');
+        if (null === $default) {
+            $default = '/';
+        }
+
+        if (!is_string($default) || '' === $default) {
+            return null;
+        }
+
+        $default = $this->filterUrl($default);
+
+        return '' === $default ? null : $this->buildJumpUrl($default);
+    }
+
+    /**
      * 解析跳转地址，绝对路径与锚点、查询串等相对地址按原样使用
      */
     private function buildJumpUrl(string $url): string
@@ -152,11 +253,11 @@ trait Jump
             return $url;
         }
 
-        return (string)($this->app ?? app())->route->buildUrl($url);
+        return (string)Route::buildUrl($url);
     }
 
     /**
-     * 过滤非 http/https 协议，避免 javascript: 等危险地址进入跳转链接
+     * 过滤非 http/https 协议与协议相对地址，避免危险跳转
      */
     private function filterUrl(?string $url): ?string
     {
@@ -164,8 +265,16 @@ trait Jump
             return $url;
         }
 
-        $scheme = parse_url($url, PHP_URL_SCHEME);
-        if (null !== $scheme && !in_array(strtolower((string)$scheme), ['http', 'https'], true)) {
+        if (preg_match('/[\x00-\x20\x7F]/', $url)) {
+            return '';
+        }
+
+        if (str_starts_with($url, '//') || str_starts_with($url, '/\\') || str_starts_with($url, '\\')) {
+            return '';
+        }
+
+        if (preg_match('/^([a-zA-Z][a-zA-Z0-9+.-]*):/', $url, $matches)
+            && !in_array(strtolower($matches[1]), ['http', 'https'], true)) {
             return '';
         }
 
@@ -177,9 +286,14 @@ trait Jump
      */
     private function getTmpl(string $key): string
     {
-        $tpl = ($this->app ?? app())->config->get('jump.' . $key);
+        $tpl      = $this->jumpConfig($key);
+        $cacheKey = $key . ':' . (is_string($tpl) ? $tpl : '');
 
-        return is_string($tpl) && is_file($tpl) ? $tpl : __DIR__ . '/tpl/dispatch_jump.html';
+        if (!array_key_exists($cacheKey, self::$tmplCache)) {
+            self::$tmplCache[$cacheKey] = is_string($tpl) && is_file($tpl) ? $tpl : JumpTemplate::default();
+        }
+
+        return self::$tmplCache[$cacheKey];
     }
 
     /**
@@ -188,12 +302,17 @@ trait Jump
     private function viewData(array $result): array
     {
         $msg = $result['msg'];
-        if (is_array($msg) || is_object($msg)) {
-            $msg = json_encode($msg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+        if (is_array($msg) || is_object($msg) || is_resource($msg)) {
+            try {
+                $msg = json_encode($msg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                $msg = '';
+            }
         }
 
-        $result['msg'] = htmlspecialchars((string)$msg, ENT_QUOTES, 'UTF-8');
-        $result['url'] = htmlspecialchars((string)($result['url'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5;
+        $result['msg'] = htmlspecialchars((string)$msg, $flags, 'UTF-8');
+        $result['url'] = htmlspecialchars((string)($result['url'] ?? ''), $flags, 'UTF-8');
 
         return $result;
     }
